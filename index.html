@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANOVA Variance Partition Explorer — Multi-Environment Trial</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header>
+  <h1>ANOVA Variance Partition Explorer</h1>
+  <p class="subtitle">How a balanced multi-environment trial (lines × environments × replications)
+     partitions phenotypic variation by ANOVA, and how that partitioning determines heritability.</p>
+  <p class="repo">Source: <a href="https://github.com/jhgille2/anova-variance-partition-explorer">github.com/jhgille2/anova-variance-partition-explorer</a></p>
+</header>
+
+<main>
+  <aside class="controls">
+    <h2>Trial design</h2>
+    <div class="ctl">
+      <label for="ctl-g">Lines (genotypes) <span class="val" id="val-g"></span></label>
+      <input type="range" id="ctl-g" min="4" max="300" step="1" value="20">
+    </div>
+    <div class="ctl">
+      <label for="ctl-r">Replications <span class="val" id="val-r"></span></label>
+      <input type="range" id="ctl-r" min="1" max="6" step="1" value="3">
+    </div>
+    <div class="ctl">
+      <label for="ctl-e">Environments <span class="val" id="val-e"></span></label>
+      <input type="range" id="ctl-e" min="2" max="8" step="1" value="4">
+    </div>
+
+    <h2>Hidden trait parameters</h2>
+    <p class="hint">True values used to simulate the trait. ANOVA never sees these.</p>
+    <div class="ctl">
+      <label for="ctl-mu">Mean (μ) <span class="val" id="val-mu"></span></label>
+      <input type="range" id="ctl-mu" min="0" max="200" step="1" value="100">
+    </div>
+    <div class="ctl">
+      <label for="ctl-s2g">σ²_G — genotype <span class="val" id="val-s2g"></span></label>
+      <input type="range" id="ctl-s2g" min="0" max="100" step="0.5" value="10">
+    </div>
+    <div class="ctl">
+      <label for="ctl-s2e">σ²_E — environment <span class="val" id="val-s2e"></span></label>
+      <input type="range" id="ctl-s2e" min="0" max="100" step="0.5" value="25">
+    </div>
+    <div class="ctl">
+      <label for="ctl-s2ge">σ²_GE — genotype × environment <span class="val" id="val-s2ge"></span></label>
+      <input type="range" id="ctl-s2ge" min="0" max="100" step="0.5" value="8">
+    </div>
+    <div class="ctl">
+      <label for="ctl-s2rep">σ²_R — rep(environment) <span class="val" id="val-s2rep"></span></label>
+      <input type="range" id="ctl-s2rep" min="0" max="50" step="0.5" value="2">
+    </div>
+    <div class="ctl">
+      <label for="ctl-s2err">σ²_ε — residual <span class="val" id="val-s2err"></span></label>
+      <input type="range" id="ctl-s2err" min="0" max="100" step="0.5" value="12">
+    </div>
+    <div class="h2box">
+      True entry-mean h²: <strong id="true-h2">—</strong>
+    </div>
+    <div class="ctl solve">
+      <label for="target-h2">Target h²</label>
+      <div class="solverow">
+        <input type="number" id="target-h2" min="0.05" max="0.99" step="0.01" value="0.80">
+        <button id="btn-solve" type="button">Solve σ²_G</button>
+      </div>
+    </div>
+
+    <h2>Simulation</h2>
+    <div class="ctl">
+      <label for="ctl-sims">Monte Carlo trials <span class="val" id="val-sims"></span></label>
+      <input type="range" id="ctl-sims" min="50" max="500" step="10" value="200">
+    </div>
+    <div class="ctl">
+      <label for="ctl-seed">Random seed</label>
+      <input type="number" id="ctl-seed" min="1" max="999999" step="1" value="7">
+    </div>
+    <div class="btnrow">
+      <button id="btn-resim" type="button">Resimulate</button>
+    </div>
+    <p class="status" id="mc-status"></p>
+  </aside>
+
+  <section class="panels">
+    <div class="panel">
+      <h2>ANOVA table</h2>
+      <p class="cap" id="design-note"></p>
+      <div class="tablewrap">
+        <table id="anova-table">
+          <thead>
+            <tr><th>Source</th><th>df</th><th>SS</th><th>MS</th><th>F</th><th>p</th><th>σ̂²</th></tr>
+          </thead>
+          <tbody id="anova-body"></tbody>
+        </table>
+      </div>
+      <p class="cap">F-tests: genotype and environment are tested against MS_GE;
+        GE and rep(environment) against MS_error. σ̂² are ANOVA method-of-moments
+        estimates from the expected mean squares. With r = 1, GE and residual are
+        confounded and MS_GE serves as the residual.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Variance partitioning: true vs. ANOVA-estimated</h2>
+      <canvas id="cv-bars"></canvas>
+      <p class="cap" id="bars-cap">Blue: hidden true components used to simulate the trait.
+        Orange: method-of-moments estimates from this trial's ANOVA. Negative estimates
+        are truncated at zero in the plot (untruncated values appear in the table).</p>
+    </div>
+
+    <div class="panel">
+      <h2>Heritability</h2>
+      <div class="statgrid">
+        <div class="stat"><span class="k">True entry-mean h²</span><span class="v" id="stat-true-h2">—</span></div>
+        <div class="stat"><span class="k">Estimated ĥ² (this trial)</span><span class="v" id="stat-est-h2">—</span></div>
+        <div class="stat"><span class="k">MC mean ĥ² ± SD</span><span class="v" id="stat-mc">—</span></div>
+        <div class="stat"><span class="k">MC: σ̂²_G &lt; 0 (truncated)</span><span class="v" id="stat-trunc">—</span></div>
+      </div>
+      <div class="plotrow">
+        <div>
+          <h3>h² vs. replications (at current environments)</h3>
+          <canvas id="cv-h2r"></canvas>
+        </div>
+        <div>
+          <h3>h² vs. environments (at current replications)</h3>
+          <canvas id="cv-h2e"></canvas>
+        </div>
+      </div>
+      <p class="cap">Curves are the theoretical entry-mean heritability
+        h² = σ²_G / (σ²_G + σ²_GE/e + σ²_ε/(r·e)) from the hidden parameters.
+        Dashed line marks the current design. Adding replications shrinks only the
+        residual term; adding environments shrinks both the GE and residual terms —
+        which is why environments usually buy more heritability per plot than
+        replications do when GE is large.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Estimator behavior over repeated trials</h2>
+      <canvas id="cv-hist"></canvas>
+      <p class="cap" id="hist-cap">Distribution of the entry-mean ĥ² estimate across Monte Carlo
+        repetitions of the whole trial. The blue line is the true h²; the orange dashed line
+        is the MC mean. Narrower, well-centered distributions mean ANOVA partitions the
+        variance reliably under that design.</p>
+    </div>
+
+    <details class="method">
+      <summary>Statistical methodology</summary>
+      <h3>Model</h3>
+      <p>Balanced g × e × r trial, RCBD within environments (replicates nested in
+        environments). All effects random and independent:</p>
+      <p class="eq">y<sub>ijk</sub> = μ + G<sub>i</sub> + E<sub>j</sub> + GE<sub>ij</sub> + R(E)<sub>jk</sub> + ε<sub>ijk</sub></p>
+      <p>G<sub>i</sub> ~ N(0, σ²_G), E<sub>j</sub> ~ N(0, σ²_E),
+        GE<sub>ij</sub> ~ N(0, σ²_GE), R(E)<sub>jk</sub> ~ N(0, σ²_R),
+        ε<sub>ijk</sub> ~ N(0, σ²_ε).</p>
+      <h3>Expected mean squares</h3>
+      <table class="ems">
+        <tr><th>Source</th><th>E[MS]</th></tr>
+        <tr><td>Genotype</td><td>σ²_ε + r·σ²_GE + r·e·σ²_G</td></tr>
+        <tr><td>Environment</td><td>σ²_ε + r·σ²_GE + r·g·σ²_E</td></tr>
+        <tr><td>G × E</td><td>σ²_ε + r·σ²_GE</td></tr>
+        <tr><td>Rep(Environment)</td><td>σ²_ε + g·σ²_R</td></tr>
+        <tr><td>Residual</td><td>σ²_ε</td></tr>
+      </table>
+      <h3>Variance component estimators</h3>
+      <p>Method of moments, equating observed MS to E[MS], e.g.
+        σ̂²_G = (MS_G − MS_GE)/(r·e), σ̂²_GE = (MS_GE − MS_error)/r.
+        Negative estimates are truncated at zero for heritability (standard practice;
+        the raw values are shown in the ANOVA table).</p>
+      <h3>Heritability</h3>
+      <p class="eq">h² = σ²_G / (σ²_G + σ²_GE/e + σ²_ε/(r·e))</p>
+      <p>Entry-mean (line-mean) basis: the squared correlation between the estimated
+        line mean and the true genotypic value, and the relevant quantity for
+        response to selection among lines (Holland, Nyquist &amp; Cervantes-Martinez, 2003).</p>
+      <h3>Assumptions and limitations</h3>
+      <ul>
+        <li>Perfectly balanced data; no missing plots.</li>
+        <li>All effects random, independent, and Gaussian; no spatial trend or
+          heteroscedasticity within environments.</li>
+        <li>Method-of-moments estimation (not REML); F-tests assume normality.</li>
+        <li>Rep(environment) variance is design noise; it does not enter the
+          entry-mean heritability, which conditions on the trial as run.</li>
+        <li>With r = 1, genotype × environment and residual variance cannot be
+          separated; the app pools them, as is conventional for unreplicated trials.</li>
+      </ul>
+      <h3>References</h3>
+      <ul class="refs">
+        <li>Holland JB, Nyquist WE, Cervantes-Martinez CT (2003) Estimating and
+          interpreting heritability for plant breeding: an update.
+          <em>Plant Breeding Reviews</em> 22:9–112.
+          https://doi.org/10.1002/9780470650202.ch2</li>
+        <li>Fehr WR (1987) <em>Principles of Cultivar Development, Vol. 1: Theory
+          and Technique.</em> Macmillan.</li>
+        <li>Hallauer AR, Miranda JB (1988) <em>Quantitative Genetics in Maize
+          Breeding</em>, 2nd ed. Iowa State University Press.</li>
+      </ul>
+    </details>
+  </section>
+</main>
+
+<script src="js/anova-core.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
